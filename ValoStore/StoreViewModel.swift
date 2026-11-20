@@ -6,7 +6,7 @@ final class StoreViewModel: ObservableObject {
     enum State {
         case needsLogin
         case loading
-        case loaded([Skin], Int)
+        case loaded(Dashboard)
         case failed(String)
     }
 
@@ -50,8 +50,21 @@ final class StoreViewModel: ObservableObject {
         if case .loaded = state { showSpinner = false }
         if showSpinner { state = .loading }
         do {
-            let result = try await RiotAPI.fetchStore(accessToken: token, shard: shard)
-            state = .loaded(result.skins, result.remaining)
+            let creds = try await RiotAPI.makeCreds(access: token, shard: shard)
+            let catalog = try? await RiotAPI.catalog()
+            async let store = RiotAPI.fetchStore(creds, catalog: catalog)
+            async let wallet = try? RiotAPI.wallet(creds)
+            async let inventory = RiotAPI.inventoryOrNil(creds, catalog)
+            async let profile = RiotAPI.profile(creds)
+            async let matches = try? RiotAPI.matches(creds)
+            async let ranks = try? RiotAPI.rankHistory(creds)
+            let s = try await store
+            state = .loaded(Dashboard(
+                skins: s.skins, remaining: s.remaining,
+                night: s.night, nightRemaining: s.nightRemaining,
+                wallet: await wallet, inventory: await inventory,
+                profile: await profile, matches: await matches,
+                rankPoints: await ranks))
         } catch RiotError.unauthorized {
             Keychain.delete("access")
             Keychain.delete("exp")
